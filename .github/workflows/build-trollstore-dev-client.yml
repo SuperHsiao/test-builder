@@ -1,0 +1,67 @@
+name: Build TrollStore Dev Client IPA (Mirror)
+
+on:
+  workflow_dispatch: # 支持在 GitHub Actions 页面手动点击触发
+
+jobs:
+  build:
+    name: Build iOS Dev Client IPA
+    runs-on: macos-latest
+    # runs-on: [self-hosted, macOS, x64]
+
+    steps:
+      - name: 检出大号私有代码 (Mirror)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.MASTER_REPO_PATH }}
+          token: ${{ secrets.MASTER_GITHUB_TOKEN }}
+          ref: 'main'
+
+      - name: 配置 Node.js 环境
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 安装项目依赖
+        run: npm ci --legacy-peer-deps
+
+      - name: 生成 iOS 原生工程
+        run: npx expo prebuild --platform ios --clean
+
+      - name: 安装 CocoaPods 依赖
+        run: |
+          cd ios
+          pod install
+
+      - name: 编译 Debug 开发版二进制 (禁用签名)
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace NodeAuth.xcworkspace \
+            -scheme NodeAuth \
+            -configuration Debug \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            -allowProvisioningUpdates \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: 封装为巨魔专用的 DevClient.ipa
+        run: |
+          cd ios/build/Build/Products/Debug-iphoneos
+          mkdir Payload
+          cp -r NodeAuth.app Payload/
+          zip -r ../../../../../NodeAuth-DevClient.ipa Payload
+          cd ../../../../../
+          ls -lh NodeAuth-DevClient.ipa
+
+      - name: 上传 DevClient IPA 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: NodeAuth-DevClient-TrollStore-IPA
+          path: NodeAuth-DevClient.ipa
+          retention-days: 7
